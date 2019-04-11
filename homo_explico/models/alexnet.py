@@ -8,6 +8,8 @@ import torch.optim as optim
 from torchvision import datasets, transforms
 import dionysus as dion
 
+import multiprocessing as mp
+
 import numpy as np
 import pandas as pd
 
@@ -34,9 +36,9 @@ class AlexNet(nn.Module):
         self.c5 = nn.Conv2d(256, 256, kernel_size=3, bias=False)
 
         self.mp3 = nn.MaxPool2d(kernel_size=2, stride=2)
-
+        ##########
         self.l1 = nn.Linear(256, 4096, bias=False)
-        #
+
         self.l2 = nn.Linear(4096, 4096, bias=False)
 
         self.l3 = nn.Linear(4096, num_classes, bias=False)
@@ -166,6 +168,10 @@ class AlexNet(nn.Module):
 
     def compute_induced_filtration(self, x, hiddens, percentile=0, mat=None):
 
+        pool = mp.Pool(mp.cpu_count())
+
+        fi = open('/home/schrater/gebhart/projects/homo_explico/logdir/experiments/alexnet_vis/log.txt', 'w')
+
         params = [self.c1,
                 self.mp1,
                 self.c2,
@@ -179,17 +185,19 @@ class AlexNet(nn.Module):
                 self.l3
                 ]
         nm = {}
+        enums = []
         percentiles = np.zeros((len(params)))
 
         x = x.cpu().detach().numpy()
         num_channels = x.shape[0]
         print(x.shape)
         l = 0
+        fi.write('layer: {}'.format(l))
         for c in range(num_channels):
             p = params[l].weight.data[:,c,:,:]
             mat = conv_layer_as_matrix(p, x[c], self.stride)
             m1, h0_births, h1_births, percentiles[l] = conv_filtration_fast2(x[c], mat, l, c, percentile=percentile)
-            enums = m1
+            enums += m1
             enums += [([hash((l,c,i[0]))], h0_births[i]) for i in np.argwhere(h0_births > percentiles[l])]
             for i in np.argwhere(h1_births > percentiles[l]):
                 nm[hash((l+1,c,i[0]))] = h1_births[i]
@@ -197,7 +205,7 @@ class AlexNet(nn.Module):
         h = hiddens[l].cpu().detach().numpy()
         num_channels = h.shape[0]
         l = 1
-        print('layer: ', l)
+        fi.write('layer: {}'.format(l))
         for c in range(num_channels):
             h1 = h[c,:,:]
             p = params[l]
@@ -217,7 +225,7 @@ class AlexNet(nn.Module):
         h = hiddens[l].cpu().detach().numpy()
         num_channels = h.shape[0]
         l = 2
-        print('layer: ', l)
+        fi.write('layer: {}'.format(l))
         for c in range(num_channels):
             p = params[l].weight.data[:,c,:,:]
             h1 = h[c,:,:]
@@ -238,7 +246,7 @@ class AlexNet(nn.Module):
         h = hiddens[l].cpu().detach().numpy()
         num_channels = h.shape[0]
         l = 3
-        print('layer: ', l)
+        fi.write('layer: {}'.format(l))
         for c in range(num_channels):
             h1 = h[c,:,:]
             p = params[l]
@@ -258,7 +266,7 @@ class AlexNet(nn.Module):
         h = hiddens[l].cpu().detach().numpy()
         num_channels = h.shape[0]
         l = 4
-        print('layer: ', l)
+        fi.write('layer: {}'.format(l))
         for c in range(num_channels):
             p = params[l].weight.data[:,c,:,:]
             mat = conv_layer_as_matrix(p, h[c], self.stride)
@@ -279,7 +287,7 @@ class AlexNet(nn.Module):
         h = hiddens[l].cpu().detach().numpy()
         num_channels = h.shape[0]
         l = 5
-        print('layer: ', l)
+        fi.write('layer: {}'.format(l))
         for c in range(num_channels):
             p = params[l].weight.data[:,c,:,:]
             mat = conv_layer_as_matrix(p, h[c], self.stride)
@@ -301,7 +309,7 @@ class AlexNet(nn.Module):
         h = hiddens[l].cpu().detach().numpy()
         num_channels = h.shape[0]
         l = 6
-        print('layer: ', l)
+        fi.write('layer: {}'.format(l))
         for c in range(num_channels):
             p = params[l].weight.data[:,c,:,:]
             mat = conv_layer_as_matrix(p, h[c], self.stride)
@@ -322,7 +330,7 @@ class AlexNet(nn.Module):
         h = hiddens[l].cpu().detach().numpy()
         num_channels = h.shape[0]
         l = 7
-        print('layer: ', l)
+        fi.write('layer: {}'.format(l))
         for c in range(num_channels):
             h1 = h[c,:,:]
             p = params[l]
@@ -344,7 +352,7 @@ class AlexNet(nn.Module):
 
         h1 = hiddens[l].cpu().detach().numpy()
         l = 8
-        print('layer: ', l)
+        fi.write('layer: {}'.format(l))
         p = params[l]
         m1, h0_births, h1_births, percentiles[l] = linear_filtration_fast2(h1, p, l, 0, percentile=percentile)
         enums += m1
@@ -361,7 +369,7 @@ class AlexNet(nn.Module):
 
         h1 = hiddens[l].cpu().detach().numpy()
         l = 9
-        print('layer: ', l)
+        fi.write('layer: {}'.format(l))
         p = params[l]
         m1, h0_births, h1_births_9, percentiles[l] = linear_filtration_fast2(h1, p, l, 0, percentile=percentile)
         enums += m1
@@ -372,7 +380,7 @@ class AlexNet(nn.Module):
 
         h1 = hiddens[l].cpu().detach().numpy()
         l = 10
-        print('layer: ', l)
+        fi.write('layer: {}'.format(l))
         p = params[l]
         m1, h0_births, h1_births_10, percentiles[l] = linear_filtration_fast2(h1, p, l, 0, percentile=percentile)
         enums += m1
@@ -384,8 +392,11 @@ class AlexNet(nn.Module):
         enums += [([hash((l+1,0,i[0]))], h1_births_10[i]) for i in np.argwhere(h1_births_10 > percentiles[l])]
         print('enums size', sys.getsizeof(enums))
         print('creating filtration object...')
+        fi.write('creating filtration object')
         f = dion.Filtration(enums)
         print('filtration size', len(f))
+        fi.write('filtration size: {}'.format(len(f)))
+        fi.close()
         print('Sorting filtration...')
         f.sort(reverse=True)
 

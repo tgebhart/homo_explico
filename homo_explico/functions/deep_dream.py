@@ -71,12 +71,12 @@ class DeepDream():
             # Save image every 20 iteration
             if i % 10 == 0:
                 print(self.created_image.shape)
-                pixels = self.created_image.reshape((28, 28))
+                pixels = self.created_image.reshape(3,32,32).transpose([1, 2, 0])
 
                 # Plot
                 plt.title('Iteration {}'.format(i))
-                plt.imshow(pixels, cmap='gray')
-                plt.show()
+                plt.imshow(pixels, interpolation='nearest')
+                plt.savefig('/home/schrater/gebhart/projects/homo_explico/logdir/experiments/alexnet_vis/iteration_{}.png'.format(i), format=png)
                 plt.close()
                 # im_path = '../generated/ddream_l' + str(self.selected_layer) + \
                 #     '_f' + str(self.selected_filter) + '_iter' + str(i) + '.jpg'

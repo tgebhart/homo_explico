@@ -2,7 +2,7 @@ import numpy as np
 from scipy.linalg import toeplitz
 import dionysus as dion
 import math
-from profilestats import profile
+# from profilestats import profile
 
 
 def conv_filter_as_matrix2(f, n, stride):
@@ -352,7 +352,7 @@ def max_pooling_filtration(h1, pool, layer, channel, percentile=0):
                 if t > percentile:
                     id_offset = (in_height*in_width) + (idx[0]*in_width + idx[1])
                     id_offset2 = (out_height*out_width) + (oh*out_width + ow)
-                    ret.append(([hash((layer,channel,id_offset)), hash((layer,channel,id_offset2))], t))
+                    ret.append(([hash((layer,channel,id_offset)), hash((layer+1,channel,id_offset2))], t))
 
 
             ow += 1
