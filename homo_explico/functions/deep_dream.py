@@ -76,7 +76,8 @@ class DeepDream():
                 # Plot
                 plt.title('Iteration {}'.format(i))
                 plt.imshow(pixels, interpolation='nearest')
-                plt.savefig('/home/schrater/gebhart/projects/homo_explico/logdir/experiments/alexnet_vis/iteration_{}.png'.format(i), format=png)
+                # plt.savefig('/home/schrater/gebhart/projects/homo_explico/logdir/experiments/alexnet_vis/iteration_{}.png'.format(i), format=png)
+                plt.show()
                 plt.close()
                 # im_path = '../generated/ddream_l' + str(self.selected_layer) + \
                 #     '_f' + str(self.selected_filter) + '_iter' + str(i) + '.jpg'

@@ -4,6 +4,12 @@ import dionysus as dion
 import math
 # from profilestats import profile
 
+def spec_hash(t):
+    l,c,i = t[0],t[1],t[2]
+    layer = "{:02d}".format(l)
+    channel = "{:03d}".format(c)
+    i = str(i)
+    return int(i+channel+layer)
 
 def conv_filter_as_matrix2(f, n, stride):
     m = f.shape[0]
@@ -158,14 +164,12 @@ def conv_filtration_fast2(x, mat, layer, channel, percentile=0):
     x_diag = np.diag(x)
     edges = np.absolute(np.matmul(mat, x_diag))
 
-    this_percentile = np.percentile(edges, percentile)
-
     h0_births = np.max(edges, axis=0)
     h1_births = np.max(edges, axis=1)
 
-    ret = [([hash((layer, channel, j)), hash((layer+1, channel, i))], edges[i,j]) for i,j in np.argwhere(edges > this_percentile)]
+    ret = [([spec_hash((layer, channel, j)), spec_hash((layer+1, channel, i))], edges[i,j].item()) for i,j in np.argwhere(edges > percentile)]
 
-    return ret, h0_births, h1_births, this_percentile
+    return ret, h0_births, h1_births
 
 
 
@@ -233,13 +237,11 @@ def linear_filtration_fast2(h1, fc, layer, channel, percentile=0):
 
     edges = np.absolute(mat*h1)
 
-    this_percentile = np.percentile(edges, percentile)
-
     h1_births = np.max(edges, axis=0)
     h2_births = np.max(edges, axis=1)
 
-    ret = [([hash((layer, channel, j)), hash((layer+1, channel, i))], edges[i,j]) for i,j in np.argwhere(edges > this_percentile)]
-    return ret, h1_births, h2_births, this_percentile
+    ret = [([spec_hash((layer, channel, j)), spec_hash((layer+1, channel, i))], edges[i,j]) for i,j in np.argwhere(edges > percentile)]
+    return ret, h1_births, h2_births
 
 
 
@@ -293,7 +295,7 @@ def max_pooling_filtration(h1, pool, layer, channel, percentile=0):
     in_height = h1.shape[height_idx]
     in_width = h1.shape[width_idx]
 
-    percentile = np.percentile(h1, percentile)
+    # percentile = np.percentile(h1, percentile)
 
     h1_births = np.zeros((in_height, in_width))
 
@@ -352,7 +354,7 @@ def max_pooling_filtration(h1, pool, layer, channel, percentile=0):
                 if t > percentile:
                     id_offset = (in_height*in_width) + (idx[0]*in_width + idx[1])
                     id_offset2 = (out_height*out_width) + (oh*out_width + ow)
-                    ret.append(([hash((layer,channel,id_offset)), hash((layer+1,channel,id_offset2))], t))
+                    ret.append(([spec_hash((layer,channel,id_offset)), spec_hash((layer+1,channel,id_offset2))], t))
 
 
             ow += 1
@@ -366,7 +368,7 @@ def max_pooling_filtration(h1, pool, layer, channel, percentile=0):
     # for i in np.argwhere(h1_births > 0):
     #     f.append(dion.Simplex([i+id_start_1], h1_births[i]))
 
-    return ret, h1_births.flatten(), h2_births.flatten(), percentile
+    return ret, h1_births.flatten(), h2_births.flatten()
 
 
 

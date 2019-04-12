@@ -13,7 +13,265 @@ import multiprocessing as mp
 import numpy as np
 import pandas as pd
 
-from homo_explico.functions.filtration import conv_filtration_fast2, linear_filtration_fast2, max_pooling_filtration, conv_layer_as_matrix
+from homo_explico.functions.filtration import conv_filtration_fast2, linear_filtration_fast2, max_pooling_filtration, conv_layer_as_matrix, spec_hash
+
+enums = []
+nm = {}
+
+def first_layer(x,p,l,c,percentile,nm,stride):
+    print('channel', c)
+    mat = conv_layer_as_matrix(p, x, stride)
+    m1, h0_births, h1_births = conv_filtration_fast2(x, mat, l, c, percentile=percentile)
+    enums = m1
+    enums += [([spec_hash((l,c,i[0]))], h0_births[i]) for i in np.argwhere(h0_births > percentile)]
+    for i in np.argwhere(h1_births > percentile):
+        nm[spec_hash((l+1,c,i[0]))] = h1_births[i]
+    return enums, nm
+
+def collect_result(res):
+    global enums
+    global nm
+    enums += res[0]
+    nm = {**nm, **res[1]}
+
+def compute_induced_filtration_parallel(x, hiddens, params, percentile=0, stride=1):
+
+    pool = mp.Pool(mp.cpu_count())
+
+    print('cpu count: {}'.format(mp.cpu_count()))
+
+    global enums
+    global nm
+    # nm = {}
+    # enums = []
+    percentiles = np.zeros((len(params)))
+
+    x = x.cpu().detach().numpy()
+    num_channels = x.shape[0]
+    print(x.shape)
+    l = 0
+    print('layer: {}'.format(l))
+    percentiles[l] = np.percentile(np.absolute(x), percentile)
+    for c in range(num_channels):
+        p = params[l].weight.data[:,c,:,:]
+        r = pool.apply_async(first_layer, args=(x[c],p,l,c,percentiles[l],nm,stride), callback=collect_result)
+        # print(r.get())
+    pool.close()
+    pool.join()
+
+    h = hiddens[l].cpu().detach().numpy()
+    num_channels = h.shape[0]
+    l = 1
+    percentiles[l] = np.percentile(np.absolute(h), percentile)
+    print('layer: {}'.format(l))
+    for c in range(num_channels):
+        h1 = h[c,:,:]
+        p = params[l]
+        m1, h0_births, h1_births = max_pooling_filtration(h1, p, l, c, percentile=percentiles[l])
+        enums += m1
+
+        comp_percentile = percentiles[l-1] if percentiles[l-1] < percentiles[l] else percentiles[l]
+        for i in np.argwhere(h0_births > comp_percentile):
+            ha = spec_hash((l,c,i[0]))
+            if ha in nm:
+                nm[ha] = h0_births[i] if h0_births[i] > nm[ha] else nm[ha]
+            else:
+                nm[ha] = h0_births[i]
+        for i in np.argwhere(h1_births > percentiles[l]):
+            nm[spec_hash((l+1,c,i[0]))] = h1_births[i]
+
+    h = hiddens[l].cpu().detach().numpy()
+    num_channels = h.shape[0]
+    l = 2
+    percentiles[l] = np.percentile(np.absolute(h), percentile)
+    print('layer: {}'.format(l))
+    for c in range(num_channels):
+        p = params[l].weight.data[:,c,:,:]
+        h1 = h[c,:,:]
+        mat = conv_layer_as_matrix(p, h1, self.stride)
+        m1, h0_births, h1_births = conv_filtration_fast2(h1, mat, l, c, percentile=percentiles[l])
+        enums += m1
+
+        comp_percentile = percentiles[l-1] if percentiles[l-1] < percentiles[l] else percentiles[l]
+        for i in np.argwhere(h0_births > comp_percentile):
+            ha = spec_hash((l,c,i[0]))
+            if ha in nm:
+                nm[ha] = h0_births[i] if h0_births[i] > nm[ha] else nm[ha]
+            else:
+                nm[ha] = h0_births[i]
+        for i in np.argwhere(h1_births > percentiles[l]):
+            nm[spec_hash((l+1,c,i[0]))] = h1_births[i]
+
+    h = hiddens[l].cpu().detach().numpy()
+    num_channels = h.shape[0]
+    l = 3
+    percentiles[l] = np.percentile(np.absolute(h), percentile)
+    print('layer: {}'.format(l))
+    for c in range(num_channels):
+        h1 = h[c,:,:]
+        p = params[l]
+        m1, h0_births, h1_births = max_pooling_filtration(h1, p, l, c, percentile=percentiles[l])
+        enums += m1
+
+        comp_percentile = percentiles[l-1] if percentiles[l-1] < percentiles[l] else percentiles[l]
+        for i in np.argwhere(h0_births > comp_percentile):
+            ha = spec_hash((l,c,i[0]))
+            if ha in nm:
+                nm[ha] = h0_births[i] if h0_births[i] > nm[ha] else nm[ha]
+            else:
+                nm[ha] = h0_births[i]
+        for i in np.argwhere(h1_births > percentiles[l]):
+            nm[spec_hash((l+1,c,i[0]))] = h1_births[i]
+
+    h = hiddens[l].cpu().detach().numpy()
+    num_channels = h.shape[0]
+    l = 4
+    percentiles[l] = np.percentile(np.absolute(h), percentile)
+    print('layer: {}'.format(l))
+    for c in range(num_channels):
+        p = params[l].weight.data[:,c,:,:]
+        mat = conv_layer_as_matrix(p, h[c], self.stride)
+        h1 = h[c,:,:]
+        m1, h0_births, h1_births = conv_filtration_fast2(h1, mat, l, c, percentile=percentiles[l])
+        enums += m1
+
+        comp_percentile = percentiles[l-1] if percentiles[l-1] < percentiles[l] else percentiles[l]
+        for i in np.argwhere(h0_births > comp_percentile):
+            ha = spec_hash((l,c,i[0]))
+            if ha in nm:
+                nm[ha] = h0_births[i] if h0_births[i] > nm[ha] else nm[ha]
+            else:
+                nm[ha] = h0_births[i]
+        for i in np.argwhere(h1_births > percentiles[l]):
+            nm[spec_hash((l+1,c,i[0]))] = h1_births[i]
+
+    h = hiddens[l].cpu().detach().numpy()
+    num_channels = h.shape[0]
+    l = 5
+    percentiles[l] = np.percentile(np.absolute(h), percentile)
+    print('layer: {}'.format(l))
+    for c in range(num_channels):
+        p = params[l].weight.data[:,c,:,:]
+        mat = conv_layer_as_matrix(p, h[c], self.stride)
+        h1 = h[c,:,:]
+        m1, h0_births, h1_births = conv_filtration_fast2(h1, mat, l, c, percentile=percentiles[l])
+        enums += m1
+
+        comp_percentile = percentiles[l-1] if percentiles[l-1] < percentiles[l] else percentiles[l]
+        for i in np.argwhere(h0_births > comp_percentile):
+            ha = spec_hash((l,c,i[0]))
+            if ha in nm:
+                nm[ha] = h0_births[i] if h0_births[i] > nm[ha] else nm[ha]
+            else:
+                nm[ha] = h0_births[i]
+        for i in np.argwhere(h1_births > percentiles[l]):
+            nm[spec_hash((l+1,c,i[0]))] = h1_births[i]
+
+
+    h = hiddens[l].cpu().detach().numpy()
+    num_channels = h.shape[0]
+    l = 6
+    print('layer: {}'.format(l))
+    percentiles[l] = np.percentile(np.absolute(h), percentile)
+    for c in range(num_channels):
+        p = params[l].weight.data[:,c,:,:]
+        mat = conv_layer_as_matrix(p, h[c], self.stride)
+        h1 = h[c,:,:]
+        m1, h0_births, h1_births = conv_filtration_fast2(h1, mat, l, c, percentile=percentiles[l])
+        enums += m1
+
+        comp_percentile = percentiles[l-1] if percentiles[l-1] < percentiles[l] else percentiles[l]
+        for i in np.argwhere(h0_births > comp_percentile):
+            ha = spec_hash((l,c,i[0]))
+            if ha in nm:
+                nm[ha] = h0_births[i] if h0_births[i] > nm[ha] else nm[ha]
+            else:
+                nm[ha] = h0_births[i]
+        for i in np.argwhere(h1_births > percentiles[l]):
+            nm[spec_hash((l+1,c,i[0]))] = h1_births[i]
+
+    h = hiddens[l].cpu().detach().numpy()
+    num_channels = h.shape[0]
+    l = 7
+    percentiles[l] = np.percentile(np.absolute(h), percentile)
+    print('layer: {}'.format(l))
+    for c in range(num_channels):
+        h1 = h[c,:,:]
+        p = params[l]
+        m1, h0_births, h1_births = max_pooling_filtration(h1, p, l, c, percentile=percentiles[l])
+        enums += m1
+
+        comp_percentile = percentiles[l-1] if percentiles[l-1] < percentiles[l] else percentiles[l]
+        for i in np.argwhere(h0_births > comp_percentile):
+            ha = spec_hash((l,c,i[0]))
+            if ha in nm:
+                nm[ha] = h0_births[i] if h0_births[i] > nm[ha] else nm[ha]
+            else:
+                nm[ha] = h0_births[i]
+        for i in np.argwhere(h1_births > percentiles[l]):
+            nm[spec_hash((l+1,0,i[0]+(c*h1_births.shape[0])))] = h1_births[i]
+
+
+    enums += [([key], value) for key, value in nm.items()]
+
+    h1 = hiddens[l].cpu().detach().numpy()
+    l = 8
+    print('layer: {}'.format(l))
+    percentiles[l] = np.percentile(np.absolute(h), percentile)
+    p = params[l]
+    m1, h0_births, h1_births = linear_filtration_fast2(h1, p, l, 0, percentile=percentiles[l])
+    enums += m1
+    comp_percentile = percentiles[l-1] if percentiles[l-1] < percentiles[l] else percentiles[l]
+    for i in np.argwhere(h0_births > comp_percentile):
+        ha = spec_hash((l,0,i[0]))
+        if ha in nm:
+            nm[ha] = h0_births[i] if h0_births[i] > nm[ha] else nm[ha]
+        else:
+            nm[ha] = h0_births[i]
+
+    ############################ ADD NM ####################################
+    print('adding nm to enums')
+    enums += [([key], value) for key, value in nm.items()]
+
+    h1 = hiddens[l].cpu().detach().numpy()
+    l = 9
+    percentiles[l] = np.percentile(np.absolute(h1), percentile)
+    print('layer: {}'.format(l))
+    p = params[l]
+    m1, h0_births, h1_births_9 = linear_filtration_fast2(h1, p, l, 0, percentile=percentiles[l])
+    enums += m1
+
+    max1 = np.maximum.reduce([h0_births, h1_births])
+    comp_percentile = percentiles[l-1] if percentiles[l-1] < percentiles[l] else percentiles[l]
+    enums += [([spec_hash((l,0,i[0]))], max1[i]) for i in np.argwhere(max1 > comp_percentile)]
+
+    h1 = hiddens[l].cpu().detach().numpy()
+    l = 10
+    print('layer: {}'.format(l))
+    percentiles[l] = np.percentile(np.absolute(h1), percentile)
+    p = params[l]
+    m1, h0_births, h1_births_10 = linear_filtration_fast2(h1, p, l, 0, percentile=percentiles[l])
+    enums += m1
+
+    max1 = np.maximum.reduce([h0_births, h1_births_9])
+    comp_percentile = percentiles[l-1] if percentiles[l-1] < percentiles[l] else percentiles[l]
+    enums += [([spec_hash((l,0,i[0]))], max1[i]) for i in np.argwhere(max1 > comp_percentile)]
+    print('final addidition to enums...')
+    enums += [([spec_hash((l+1,0,i[0]))], h1_births_10[i]) for i in np.argwhere(h1_births_10 > percentiles[l])]
+
+
+    print('enums size', sys.getsizeof(enums))
+    print('creating filtration object...')
+    f = dion.Filtration()
+    # for enum in enums[:10]:
+    #     f.append(dion.Simplex(enum[0], enum[1]))
+    f = dion.Filtration(enums[:100])
+    print('filtration size', len(f))
+    print('Sorting filtration...')
+    f.sort(reverse=True)
+
+    return f
+
 
 class AlexNet(nn.Module):
     def __init__(self, num_classes=10):
@@ -166,12 +424,7 @@ class AlexNet(nn.Module):
         return f
 
 
-    def compute_induced_filtration(self, x, hiddens, percentile=0, mat=None):
-
-        pool = mp.Pool(mp.cpu_count())
-
-        fi = open('/home/schrater/gebhart/projects/homo_explico/logdir/experiments/alexnet_vis/log.txt', 'w')
-
+    def compute_induced_filtration(self, x, hiddens, percentile=0):
         params = [self.c1,
                 self.mp1,
                 self.c2,
@@ -184,223 +437,7 @@ class AlexNet(nn.Module):
                 self.l2,
                 self.l3
                 ]
-        nm = {}
-        enums = []
-        percentiles = np.zeros((len(params)))
-
-        x = x.cpu().detach().numpy()
-        num_channels = x.shape[0]
-        print(x.shape)
-        l = 0
-        fi.write('layer: {}'.format(l))
-        for c in range(num_channels):
-            p = params[l].weight.data[:,c,:,:]
-            mat = conv_layer_as_matrix(p, x[c], self.stride)
-            m1, h0_births, h1_births, percentiles[l] = conv_filtration_fast2(x[c], mat, l, c, percentile=percentile)
-            enums += m1
-            enums += [([hash((l,c,i[0]))], h0_births[i]) for i in np.argwhere(h0_births > percentiles[l])]
-            for i in np.argwhere(h1_births > percentiles[l]):
-                nm[hash((l+1,c,i[0]))] = h1_births[i]
-
-        h = hiddens[l].cpu().detach().numpy()
-        num_channels = h.shape[0]
-        l = 1
-        fi.write('layer: {}'.format(l))
-        for c in range(num_channels):
-            h1 = h[c,:,:]
-            p = params[l]
-            m1, h0_births, h1_births, percentiles[l] = max_pooling_filtration(h1, p, l, c, percentile=percentile)
-            enums += m1
-
-            comp_percentile = percentiles[l-1] if percentiles[l-1] < percentiles[l] else percentiles[l]
-            for i in np.argwhere(h0_births > comp_percentile):
-                ha = hash((l,c,i[0]))
-                if ha in nm:
-                    nm[ha] = h0_births[i] if h0_births[i] > nm[ha] else nm[ha]
-                else:
-                    nm[ha] = h0_births[i]
-            for i in np.argwhere(h1_births > percentiles[l]):
-                nm[hash((l+1,c,i[0]))] = h1_births[i]
-
-        h = hiddens[l].cpu().detach().numpy()
-        num_channels = h.shape[0]
-        l = 2
-        fi.write('layer: {}'.format(l))
-        for c in range(num_channels):
-            p = params[l].weight.data[:,c,:,:]
-            h1 = h[c,:,:]
-            mat = conv_layer_as_matrix(p, h1, self.stride)
-            m1, h0_births, h1_births, percentiles[l] = conv_filtration_fast2(h1, mat, l, c, percentile=percentile)
-            enums += m1
-
-            comp_percentile = percentiles[l-1] if percentiles[l-1] < percentiles[l] else percentiles[l]
-            for i in np.argwhere(h0_births > comp_percentile):
-                ha = hash((l,c,i[0]))
-                if ha in nm:
-                    nm[ha] = h0_births[i] if h0_births[i] > nm[ha] else nm[ha]
-                else:
-                    nm[ha] = h0_births[i]
-            for i in np.argwhere(h1_births > percentiles[l]):
-                nm[hash((l+1,c,i[0]))] = h1_births[i]
-
-        h = hiddens[l].cpu().detach().numpy()
-        num_channels = h.shape[0]
-        l = 3
-        fi.write('layer: {}'.format(l))
-        for c in range(num_channels):
-            h1 = h[c,:,:]
-            p = params[l]
-            m1, h0_births, h1_births, percentiles[l] = max_pooling_filtration(h1, p, l, c, percentile=percentile)
-            enums += m1
-
-            comp_percentile = percentiles[l-1] if percentiles[l-1] < percentiles[l] else percentiles[l]
-            for i in np.argwhere(h0_births > comp_percentile):
-                ha = hash((l,c,i[0]))
-                if ha in nm:
-                    nm[ha] = h0_births[i] if h0_births[i] > nm[ha] else nm[ha]
-                else:
-                    nm[ha] = h0_births[i]
-            for i in np.argwhere(h1_births > percentiles[l]):
-                nm[hash((l+1,c,i[0]))] = h1_births[i]
-
-        h = hiddens[l].cpu().detach().numpy()
-        num_channels = h.shape[0]
-        l = 4
-        fi.write('layer: {}'.format(l))
-        for c in range(num_channels):
-            p = params[l].weight.data[:,c,:,:]
-            mat = conv_layer_as_matrix(p, h[c], self.stride)
-            h1 = h[c,:,:]
-            m1, h0_births, h1_births, percentiles[l] = conv_filtration_fast2(h1, mat, l, c, percentile=percentile)
-            enums += m1
-
-            comp_percentile = percentiles[l-1] if percentiles[l-1] < percentiles[l] else percentiles[l]
-            for i in np.argwhere(h0_births > comp_percentile):
-                ha = hash((l,c,i[0]))
-                if ha in nm:
-                    nm[ha] = h0_births[i] if h0_births[i] > nm[ha] else nm[ha]
-                else:
-                    nm[ha] = h0_births[i]
-            for i in np.argwhere(h1_births > percentiles[l]):
-                nm[hash((l+1,c,i[0]))] = h1_births[i]
-
-        h = hiddens[l].cpu().detach().numpy()
-        num_channels = h.shape[0]
-        l = 5
-        fi.write('layer: {}'.format(l))
-        for c in range(num_channels):
-            p = params[l].weight.data[:,c,:,:]
-            mat = conv_layer_as_matrix(p, h[c], self.stride)
-            h1 = h[c,:,:]
-            m1, h0_births, h1_births, percentiles[l] = conv_filtration_fast2(h1, mat, l, c, percentile=percentile)
-            enums += m1
-
-            comp_percentile = percentiles[l-1] if percentiles[l-1] < percentiles[l] else percentiles[l]
-            for i in np.argwhere(h0_births > comp_percentile):
-                ha = hash((l,c,i[0]))
-                if ha in nm:
-                    nm[ha] = h0_births[i] if h0_births[i] > nm[ha] else nm[ha]
-                else:
-                    nm[ha] = h0_births[i]
-            for i in np.argwhere(h1_births > percentiles[l]):
-                nm[hash((l+1,c,i[0]))] = h1_births[i]
-
-
-        h = hiddens[l].cpu().detach().numpy()
-        num_channels = h.shape[0]
-        l = 6
-        fi.write('layer: {}'.format(l))
-        for c in range(num_channels):
-            p = params[l].weight.data[:,c,:,:]
-            mat = conv_layer_as_matrix(p, h[c], self.stride)
-            h1 = h[c,:,:]
-            m1, h0_births, h1_births, percentiles[l] = conv_filtration_fast2(h1, mat, l, c, percentile=percentile)
-            enums += m1
-
-            comp_percentile = percentiles[l-1] if percentiles[l-1] < percentiles[l] else percentiles[l]
-            for i in np.argwhere(h0_births > comp_percentile):
-                ha = hash((l,c,i[0]))
-                if ha in nm:
-                    nm[ha] = h0_births[i] if h0_births[i] > nm[ha] else nm[ha]
-                else:
-                    nm[ha] = h0_births[i]
-            for i in np.argwhere(h1_births > percentiles[l]):
-                nm[hash((l+1,c,i[0]))] = h1_births[i]
-
-        h = hiddens[l].cpu().detach().numpy()
-        num_channels = h.shape[0]
-        l = 7
-        fi.write('layer: {}'.format(l))
-        for c in range(num_channels):
-            h1 = h[c,:,:]
-            p = params[l]
-            m1, h0_births, h1_births, percentiles[l] = max_pooling_filtration(h1, p, l, c, percentile=percentile)
-            enums += m1
-
-            comp_percentile = percentiles[l-1] if percentiles[l-1] < percentiles[l] else percentiles[l]
-            for i in np.argwhere(h0_births > comp_percentile):
-                ha = hash((l,c,i[0]))
-                if ha in nm:
-                    nm[ha] = h0_births[i] if h0_births[i] > nm[ha] else nm[ha]
-                else:
-                    nm[ha] = h0_births[i]
-            for i in np.argwhere(h1_births > percentiles[l]):
-                nm[hash((l+1,0,i[0]+(c*h1_births.shape[0])))] = h1_births[i]
-
-
-        enums += [([key], value) for key, value in nm.items()]
-
-        h1 = hiddens[l].cpu().detach().numpy()
-        l = 8
-        fi.write('layer: {}'.format(l))
-        p = params[l]
-        m1, h0_births, h1_births, percentiles[l] = linear_filtration_fast2(h1, p, l, 0, percentile=percentile)
-        enums += m1
-        comp_percentile = percentiles[l-1] if percentiles[l-1] < percentiles[l] else percentiles[l]
-        for i in np.argwhere(h0_births > comp_percentile):
-            ha = hash((l,0,i[0]))
-            if ha in nm:
-                nm[ha] = h0_births[i] if h0_births[i] > nm[ha] else nm[ha]
-            else:
-                nm[ha] = h0_births[i]
-
-        ############################ ADD NM ####################################
-        enums += [([key], value) for key, value in nm.items()]
-
-        h1 = hiddens[l].cpu().detach().numpy()
-        l = 9
-        fi.write('layer: {}'.format(l))
-        p = params[l]
-        m1, h0_births, h1_births_9, percentiles[l] = linear_filtration_fast2(h1, p, l, 0, percentile=percentile)
-        enums += m1
-
-        max1 = np.maximum.reduce([h0_births, h1_births])
-        comp_percentile = percentiles[l-1] if percentiles[l-1] < percentiles[l] else percentiles[l]
-        enums += [([hash((l,0,i[0]))], max1[i]) for i in np.argwhere(max1 > comp_percentile)]
-
-        h1 = hiddens[l].cpu().detach().numpy()
-        l = 10
-        fi.write('layer: {}'.format(l))
-        p = params[l]
-        m1, h0_births, h1_births_10, percentiles[l] = linear_filtration_fast2(h1, p, l, 0, percentile=percentile)
-        enums += m1
-
-        max1 = np.maximum.reduce([h0_births, h1_births_9])
-        comp_percentile = percentiles[l-1] if percentiles[l-1] < percentiles[l] else percentiles[l]
-        enums += [([hash((l,0,i[0]))], max1[i]) for i in np.argwhere(max1 > comp_percentile)]
-        print('final addidition to enums...')
-        enums += [([hash((l+1,0,i[0]))], h1_births_10[i]) for i in np.argwhere(h1_births_10 > percentiles[l])]
-        print('enums size', sys.getsizeof(enums))
-        print('creating filtration object...')
-        fi.write('creating filtration object')
-        f = dion.Filtration(enums)
-        print('filtration size', len(f))
-        fi.write('filtration size: {}'.format(len(f)))
-        fi.close()
-        print('Sorting filtration...')
-        f.sort(reverse=True)
-
-        return f
+        return compute_induced_filtration_parallel(x,hiddens,params,percentile=percentile, stride=self.stride)
 
 
     def compute_layer_mask(self, x, hiddens, subgraph=0, percentile=0):
