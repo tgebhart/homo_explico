@@ -88,7 +88,7 @@ def compute_induced_filtration_parallel(x, hiddens, params, percentile=0, stride
     for c in range(num_channels):
         p = params[l].weight.data[:,c,:,:]
         h1 = h[c,:,:]
-        mat = conv_layer_as_matrix(p, h1, self.stride)
+        mat = conv_layer_as_matrix(p, h1, stride)
         m1, h0_births, h1_births = conv_filtration_fast2(h1, mat, l, c, percentile=percentiles[l])
         enums += m1
 
@@ -130,7 +130,7 @@ def compute_induced_filtration_parallel(x, hiddens, params, percentile=0, stride
     print('layer: {}'.format(l))
     for c in range(num_channels):
         p = params[l].weight.data[:,c,:,:]
-        mat = conv_layer_as_matrix(p, h[c], self.stride)
+        mat = conv_layer_as_matrix(p, h[c], stride)
         h1 = h[c,:,:]
         m1, h0_births, h1_births = conv_filtration_fast2(h1, mat, l, c, percentile=percentiles[l])
         enums += m1
@@ -152,7 +152,7 @@ def compute_induced_filtration_parallel(x, hiddens, params, percentile=0, stride
     print('layer: {}'.format(l))
     for c in range(num_channels):
         p = params[l].weight.data[:,c,:,:]
-        mat = conv_layer_as_matrix(p, h[c], self.stride)
+        mat = conv_layer_as_matrix(p, h[c], stride)
         h1 = h[c,:,:]
         m1, h0_births, h1_births = conv_filtration_fast2(h1, mat, l, c, percentile=percentiles[l])
         enums += m1
@@ -175,7 +175,7 @@ def compute_induced_filtration_parallel(x, hiddens, params, percentile=0, stride
     percentiles[l] = np.percentile(np.absolute(h), percentile)
     for c in range(num_channels):
         p = params[l].weight.data[:,c,:,:]
-        mat = conv_layer_as_matrix(p, h[c], self.stride)
+        mat = conv_layer_as_matrix(p, h[c], stride)
         h1 = h[c,:,:]
         m1, h0_births, h1_births = conv_filtration_fast2(h1, mat, l, c, percentile=percentiles[l])
         enums += m1
@@ -265,7 +265,7 @@ def compute_induced_filtration_parallel(x, hiddens, params, percentile=0, stride
     f = dion.Filtration()
     # for enum in enums[:10]:
     #     f.append(dion.Simplex(enum[0], enum[1]))
-    f = dion.Filtration(enums[:100])
+    f = dion.Filtration(enums)
     print('filtration size', len(f))
     print('Sorting filtration...')
     f.sort(reverse=True)
