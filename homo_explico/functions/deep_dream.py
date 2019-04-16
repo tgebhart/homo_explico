@@ -46,7 +46,6 @@ class DeepDream():
         this_hiddens = [hiddens[i][0] for i in range(len(hiddens))]
         # this_hiddens = hiddens
         muls = self.model.compute_layer_mask(self.processed_image, this_hiddens, subgraph=subgraph, percentile=percentile)
-        muls[0].shape
         for i in range(1, 251):
             optimizer.zero_grad()
             # Assign create image to a variable to move forward in the model
@@ -56,7 +55,7 @@ class DeepDream():
             # muls = model.compute_layer_mask(x, hiddens, thru=2, percentile=0)
             s = torch.zeros((len(this_hiddens)))
             for l in range(len(this_hiddens)):
-                s[l] = torch.sum(this_hiddens[l]*muls[l])
+                s[l] = torch.sum(this_hiddens[l]*muls[l].reshape(this_hiddens[l].shape))
                 # print(s[l].numpy())
             # Loss function is the mean of the output of the selected layer/filter
             # We try to minimize the mean of the output of that specific filter
@@ -76,8 +75,8 @@ class DeepDream():
                 # Plot
                 plt.title('Iteration {}'.format(i))
                 plt.imshow(pixels, interpolation='nearest')
-                # plt.savefig('/home/schrater/gebhart/projects/homo_explico/logdir/experiments/alexnet_vis/iteration_{}.png'.format(i), format=png)
-                plt.show()
+                plt.savefig('/home/tgebhart/projects/homo_explico/logdir/experiments/alexnet_vis/iteration_{}.png'.format(i), format='png')
+                # plt.show()
                 plt.close()
                 # im_path = '../generated/ddream_l' + str(self.selected_layer) + \
                 #     '_f' + str(self.selected_filter) + '_iter' + str(i) + '.jpg'

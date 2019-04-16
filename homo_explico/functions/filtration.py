@@ -5,11 +5,12 @@ import math
 # from profilestats import profile
 
 def spec_hash(t):
-    l,c,i = t[0],t[1],t[2]
-    layer = "{:02d}".format(l)
-    channel = "{:03d}".format(c)
-    i = str(i)
-    return int(i+channel+layer)
+    # l,c,i = t[0],t[1],t[2]
+    # layer = "{:02d}".format(l)
+    # channel = "{:03d}".format(c)
+    # i = str(i)
+    # return int(i+channel+layer)
+    return t
 
 def conv_filter_as_matrix2(f, n, stride):
     m = f.shape[0]
@@ -350,7 +351,7 @@ def max_pooling_filtration(h1, pool, layer, channel, percentile=0):
             # attach edges to next layer's node
             for idx in idx_mat:
                 t = mat[idx[0],idx[1]]
-                h1_births[idx[0],idx[1]] = t
+                # h1_births[idx[0],idx[1]] = t
                 if t > percentile:
                     id_offset = (in_height*in_width) + (idx[0]*in_width + idx[1])
                     id_offset2 = (out_height*out_width) + (oh*out_width + ow)
@@ -368,7 +369,7 @@ def max_pooling_filtration(h1, pool, layer, channel, percentile=0):
     # for i in np.argwhere(h1_births > 0):
     #     f.append(dion.Simplex([i+id_start_1], h1_births[i]))
 
-    return ret, h1_births.flatten(), h2_births.flatten()
+    return ret, np.where(h1 > percentile).flatten(), h2_births.flatten()
 
 
 

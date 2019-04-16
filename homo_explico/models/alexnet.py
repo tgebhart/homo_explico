@@ -7,6 +7,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torchvision import datasets, transforms
 import dionysus as dion
+import networkx as nx
 
 import multiprocessing as mp
 
@@ -16,66 +17,64 @@ import pandas as pd
 from homo_explico.functions.filtration import conv_filtration_fast2, linear_filtration_fast2, max_pooling_filtration, conv_layer_as_matrix, spec_hash
 
 enums = []
+id = 0
 nm = {}
+f = dion.Filtration()
 
-def first_layer(x,p,l,c,percentile,nm,stride):
+def first_layer(x,p,l,c,percentile,stride):
     mat = conv_layer_as_matrix(p, x, stride)
     m1, h0_births, h1_births = conv_filtration_fast2(x, mat, l, c, percentile=percentile)
     enums = m1
-    enums += [([spec_hash((l,c,i[0]))], h0_births[i]) for i in np.argwhere(h0_births > percentile)]
-    for i in np.argwhere(h1_births > percentile):
-        nm[spec_hash((l+1,c,i[0]))] = h1_births[i]
-    return enums, nm
+    enums += [([spec_hash((l,c,i[0]))], h0_births[i].item()) for i in np.argwhere(h0_births > percentile)]
+    enums += [([spec_hash((l+1,c,i[0]))], h1_births[i].item()) for i in np.argwhere(h1_births > percentile)]
+    return enums
 
-def mid_conv(h1,p,l,c,percentiles,nm,stride):
+def mid_conv(h1,p,l,c,percentiles,stride):
     mat = conv_layer_as_matrix(p, h1, stride)
     m1, h0_births, h1_births = conv_filtration_fast2(h1, mat, l, c, percentile=percentiles[l])
     enums = m1
     comp_percentile = percentiles[l-1] if percentiles[l-1] < percentiles[l] else percentiles[l]
-    for i in np.argwhere(h0_births > comp_percentile):
-        ha = spec_hash((l,c,i[0]))
-        if ha in nm:
-            nm[ha] = h0_births[i] if h0_births[i] > nm[ha] else nm[ha]
-        else:
-            nm[ha] = h0_births[i]
-    for i in np.argwhere(h1_births > percentiles[l]):
-        nm[spec_hash((l+1,c,i[0]))] = h1_births[i]
-    return enums, nm
+    enums += [([spec_hash((l,c,i[0]))], h0_births[i].item()) for i in np.argwhere(h0_births > comp_percentile)]
+    enums += [([spec_hash((l+1,c,i[0]))], h1_births[i].item()) for i in np.argwhere(h1_births > percentiles[l])]
+    return enums
 
-def max_pool_layer(h1,p,l,c,percentiles,nm):
+def max_pool_layer(h1,p,l,c,percentiles):
     m1, h0_births, h1_births = max_pooling_filtration(h1, p, l, c, percentile=percentiles[l])
     enums = m1
     comp_percentile = percentiles[l-1] if percentiles[l-1] < percentiles[l] else percentiles[l]
-    for i in np.argwhere(h0_births > comp_percentile):
-        ha = spec_hash((l,c,i[0]))
-        if ha in nm:
-            nm[ha] = h0_births[i] if h0_births[i] > nm[ha] else nm[ha]
-        else:
-            nm[ha] = h0_births[i]
-    for i in np.argwhere(h1_births > percentiles[l]):
-        nm[spec_hash((l+1,c,i[0]))] = h1_births[i]
-    return enums, nm
+    enums += [([spec_hash((l,c,i[0]))], h0_births[i].item()) for i in np.argwhere(h0_births > comp_percentile)]
+    enums += [([spec_hash((l+1,c,i[0]))], h1_births[i].item()) for i in np.argwhere(h1_births > percentiles[l])]
+    return enums
 
-def last_pool(h1,p,l,c,percentiles,nm):
+def last_pool(h1,p,l,c,percentiles):
     m1, h0_births, h1_births = max_pooling_filtration(h1, p, l, c, percentile=percentiles[l])
     enums = m1
-
     comp_percentile = percentiles[l-1] if percentiles[l-1] < percentiles[l] else percentiles[l]
-    for i in np.argwhere(h0_births > comp_percentile):
-        ha = spec_hash((l,c,i[0]))
-        if ha in nm:
-            nm[ha] = h0_births[i] if h0_births[i] > nm[ha] else nm[ha]
-        else:
-            nm[ha] = h0_births[i]
-    for i in np.argwhere(h1_births > percentiles[l]):
-        nm[spec_hash((l+1,0,i[0]+(c*h1_births.shape[0])))] = h1_births[i]
-    return enums, nm
+    enums += [([spec_hash((l,c,i[0]))], h0_births[i].item()) for i in np.argwhere(h0_births > comp_percentile)]
+    enums += [([spec_hash((l+1,0,i[0]+(c*h1_births.shape[0])))], h1_births[i].item()) for i in np.argwhere(h1_births > percentiles[l])]
+    return enums
 
 def collect_result(res):
-    global enums
     global nm
-    enums += res[0]
-    nm = {**nm, **res[1]}
+    global id
+    for enum in res:
+        nodes = enum[0]
+        weight = enum[1]
+        if len(nodes) == 1:
+            if nodes[0] not in nm:
+                nm[nodes[0]] = id
+                id += 1
+                f.append(dion.Simplex([nm[nodes[0]]], weight))
+            else:
+                f.append(dion.Simplex([nm[nodes[0]]], weight))
+        if len(nodes) == 2:
+            if nodes[0] not in nm:
+                nm[nodes[0]] = id
+                id += 1
+            if nodes[1] not in nm:
+                nm[nodes[1]] = id
+                id += 1
+            f.append(dion.Simplex([nm[nodes[0]], nm[nodes[1]]], weight))
 
 def compute_induced_filtration_parallel(x, hiddens, params, percentile=0, stride=1):
 
@@ -84,8 +83,9 @@ def compute_induced_filtration_parallel(x, hiddens, params, percentile=0, stride
 
     global enums
     global nm
-    # nm = {}
-    # enums = []
+    global id
+    global f
+
     percentiles = np.zeros((len(params)))
 
     x = x.cpu().detach().numpy()
@@ -93,129 +93,117 @@ def compute_induced_filtration_parallel(x, hiddens, params, percentile=0, stride
     print(x.shape)
     l = 0
     print('layer: {}'.format(l))
-    percentiles[l] = np.percentile(np.absolute(x), percentile)
+    percentiles[l] = np.percentile(np.absolute(hiddens[l].cpu().detach().numpy()), percentile)
     for c in range(num_channels):
         p = params[l].weight.data[:,c,:,:]
-        r = pool.apply_async(first_layer, args=(x[c],p,l,c,percentiles[l],nm,stride), callback=collect_result)
-        # print(r.get())
+        r = pool.apply_async(first_layer, args=(x[c],p,l,c,percentiles[l],stride), callback=collect_result)
     pool.close()
     pool.join()
 
     h = hiddens[l].cpu().detach().numpy()
     num_channels = h.shape[0]
     l = 1
-    percentiles[l] = np.percentile(np.absolute(h), percentile)
+    percentiles[l] = np.percentile(np.absolute(hiddens[l].cpu().detach().numpy()), percentile)
     print('layer: {}'.format(l))
     pool = mp.Pool(mp.cpu_count())
     for c in range(num_channels):
         h1 = h[c,:,:]
         p = params[l]
-        r = pool.apply_async(max_pool_layer, args=(h1,p,l,c,percentiles,nm), callback=collect_result)
+        r = pool.apply_async(max_pool_layer, args=(h1,p,l,c,percentiles), callback=collect_result)
     pool.close()
     pool.join()
 
     h = hiddens[l].cpu().detach().numpy()
     num_channels = h.shape[0]
     l = 2
-    percentiles[l] = np.percentile(np.absolute(h), percentile)
+    percentiles[l] = np.percentile(np.absolute(hiddens[l].cpu().detach().numpy()), percentile)
     print('layer: {}'.format(l))
     pool = mp.Pool(mp.cpu_count())
     for c in range(num_channels):
         p = params[l].weight.data[:,c,:,:]
         h1 = h[c,:,:]
-        r = pool.apply_async(mid_conv, args=(h1,p,l,c,percentiles,nm,stride), callback=collect_result)
+        r = pool.apply_async(mid_conv, args=(h1,p,l,c,percentiles,stride), callback=collect_result)
     pool.close()
     pool.join()
 
     h = hiddens[l].cpu().detach().numpy()
     num_channels = h.shape[0]
     l = 3
-    percentiles[l] = np.percentile(np.absolute(h), percentile)
+    percentiles[l] = np.percentile(np.absolute(hiddens[l].cpu().detach().numpy()), percentile)
     print('layer: {}'.format(l))
     pool = mp.Pool(mp.cpu_count())
     for c in range(num_channels):
         h1 = h[c,:,:]
         p = params[l]
-        r = pool.apply_async(max_pool_layer, args=(h1,p,l,c,percentiles,nm), callback=collect_result)
+        r = pool.apply_async(max_pool_layer, args=(h1,p,l,c,percentiles), callback=collect_result)
     pool.close()
     pool.join()
 
     h = hiddens[l].cpu().detach().numpy()
     num_channels = h.shape[0]
     l = 4
-    percentiles[l] = np.percentile(np.absolute(h), percentile)
+    percentiles[l] = np.percentile(np.absolute(hiddens[l].cpu().detach().numpy()), percentile)
     print('layer: {}'.format(l))
     pool = mp.Pool(mp.cpu_count())
     for c in range(num_channels):
         p = params[l].weight.data[:,c,:,:]
         h1 = h[c,:,:]
-        r = pool.apply_async(mid_conv, args=(h1,p,l,c,percentiles,nm,stride), callback=collect_result)
+        r = pool.apply_async(mid_conv, args=(h1,p,l,c,percentiles,stride), callback=collect_result)
     pool.close()
     pool.join()
 
     h = hiddens[l].cpu().detach().numpy()
     num_channels = h.shape[0]
     l = 5
-    percentiles[l] = np.percentile(np.absolute(h), percentile)
+    percentiles[l] = np.percentile(np.absolute(hiddens[l].cpu().detach().numpy()), percentile)
     print('layer: {}'.format(l))
     pool = mp.Pool(mp.cpu_count())
     for c in range(num_channels):
         p = params[l].weight.data[:,c,:,:]
         h1 = h[c,:,:]
-        r = pool.apply_async(mid_conv, args=(h1,p,l,c,percentiles,nm,stride), callback=collect_result)
+        r = pool.apply_async(mid_conv, args=(h1,p,l,c,percentiles,stride), callback=collect_result)
     pool.close()
     pool.join()
 
     h = hiddens[l].cpu().detach().numpy()
     num_channels = h.shape[0]
     l = 6
-    percentiles[l] = np.percentile(np.absolute(h), percentile)
+    percentiles[l] = np.percentile(np.absolute(hiddens[l].cpu().detach().numpy()), percentile)
     print('layer: {}'.format(l))
     pool = mp.Pool(mp.cpu_count())
     for c in range(num_channels):
         p = params[l].weight.data[:,c,:,:]
         h1 = h[c,:,:]
-        r = pool.apply_async(mid_conv, args=(h1,p,l,c,percentiles,nm,stride), callback=collect_result)
+        r = pool.apply_async(mid_conv, args=(h1,p,l,c,percentiles,stride), callback=collect_result)
     pool.close()
     pool.join()
 
     h = hiddens[l].cpu().detach().numpy()
     num_channels = h.shape[0]
     l = 7
-    percentiles[l] = np.percentile(np.absolute(h), percentile)
+    percentiles[l] = np.percentile(np.absolute(hiddens[l].cpu().detach().numpy()), percentile)
     print('layer: {}'.format(l))
     pool = mp.Pool(mp.cpu_count())
     for c in range(num_channels):
         h1 = h[c,:,:]
         p = params[l]
-        r = pool.apply_async(last_pool, args=(h1,p,l,c,percentiles,nm), callback=collect_result)
+        r = pool.apply_async(last_pool, args=(h1,p,l,c,percentiles), callback=collect_result)
     pool.close()
     pool.join()
-
-    # enums += [([key], value) for key, value in nm.items()]
 
     h1 = hiddens[l].cpu().detach().numpy()
     l = 8
     print('layer: {}'.format(l))
-    percentiles[l] = np.percentile(np.absolute(h), percentile)
+    percentiles[l] = np.percentile(np.absolute(hiddens[l].cpu().detach().numpy()), percentile)
     p = params[l]
     m1, h0_births, h1_births = linear_filtration_fast2(h1, p, l, 0, percentile=percentiles[l])
     enums += m1
     comp_percentile = percentiles[l-1] if percentiles[l-1] < percentiles[l] else percentiles[l]
-    for i in np.argwhere(h0_births > comp_percentile):
-        ha = spec_hash((l,0,i[0]))
-        if ha in nm:
-            nm[ha] = h0_births[i] if h0_births[i] > nm[ha] else nm[ha]
-        else:
-            nm[ha] = h0_births[i]
-
-    ############################ ADD NM ####################################
-    print('adding nm to enums')
-    enums += [([key], value) for key, value in nm.items()]
+    enums += [([spec_hash((l,c,i[0]))], h0_births[i]) for i in np.argwhere(h0_births > comp_percentile)]
 
     h1 = hiddens[l].cpu().detach().numpy()
     l = 9
-    percentiles[l] = np.percentile(np.absolute(h1), percentile)
+    percentiles[l] = np.percentile(np.absolute(hiddens[l].cpu().detach().numpy()), percentile)
     print('layer: {}'.format(l))
     p = params[l]
     m1, h0_births, h1_births_9 = linear_filtration_fast2(h1, p, l, 0, percentile=percentiles[l])
@@ -228,7 +216,7 @@ def compute_induced_filtration_parallel(x, hiddens, params, percentile=0, stride
     h1 = hiddens[l].cpu().detach().numpy()
     l = 10
     print('layer: {}'.format(l))
-    percentiles[l] = np.percentile(np.absolute(h1), percentile)
+    percentiles[l] = np.percentile(np.absolute(hiddens[l].cpu().detach().numpy()), percentile)
     p = params[l]
     m1, h0_births, h1_births_10 = linear_filtration_fast2(h1, p, l, 0, percentile=percentiles[l])
     enums += m1
@@ -236,21 +224,21 @@ def compute_induced_filtration_parallel(x, hiddens, params, percentile=0, stride
     max1 = np.maximum.reduce([h0_births, h1_births_9])
     comp_percentile = percentiles[l-1] if percentiles[l-1] < percentiles[l] else percentiles[l]
     enums += [([spec_hash((l,0,i[0]))], max1[i]) for i in np.argwhere(max1 > comp_percentile)]
-    print('final addidition to enums...')
     enums += [([spec_hash((l+1,0,i[0]))], h1_births_10[i]) for i in np.argwhere(h1_births_10 > percentiles[l])]
 
+    collect_result(enums)
 
-    print('enums size', sys.getsizeof(enums))
+    # with open('quick_dump.txt', 'w') as fp:
+    #     for k, v in nm.items():
+    #         fp.write('{}, {}\n'.format(k,v))
+
     print('creating filtration object...')
-    # f = dion.Filtration()
-    # for enum in enums[:10]:
-    #     f.append(dion.Simplex(enum[0], enum[1]))
-    f = dion.Filtration(enums[:1000])
+    # f = dion.Filtration(enums)
     print('filtration size', len(f))
     print('Sorting filtration...')
     f.sort(reverse=True)
 
-    return f
+    return f, nm
 
 
 class AlexNet(nn.Module):
@@ -274,12 +262,25 @@ class AlexNet(nn.Module):
         self.c5 = nn.Conv2d(256, 256, kernel_size=3, bias=False)
 
         self.mp3 = nn.MaxPool2d(kernel_size=2, stride=2)
-        ##########
+
         self.l1 = nn.Linear(256, 4096, bias=False)
 
         self.l2 = nn.Linear(4096, 4096, bias=False)
 
         self.l3 = nn.Linear(4096, num_classes, bias=False)
+
+        self.params = [self.c1,
+                self.mp1,
+                self.c2,
+                self.mp2,
+                self.c3,
+                self.c4,
+                self.c5,
+                self.mp3,
+                self.l1,
+                self.l2,
+                self.l3
+                ]
 
     def forward(self, x, hiddens=False):
 
@@ -405,24 +406,11 @@ class AlexNet(nn.Module):
 
 
     def compute_induced_filtration(self, x, hiddens, percentile=0):
-        params = [self.c1,
-                self.mp1,
-                self.c2,
-                self.mp2,
-                self.c3,
-                self.c4,
-                self.c5,
-                self.mp3,
-                self.l1,
-                self.l2,
-                self.l3
-                ]
-        return compute_induced_filtration_parallel(x,hiddens,params,percentile=percentile, stride=self.stride)
+        return compute_induced_filtration_parallel(x,hiddens,self.params,percentile=percentile,stride=self.stride)
 
 
     def compute_layer_mask(self, x, hiddens, subgraph=0, percentile=0):
-        # mat = conv_layer_as_matrix(self.conv1.weight.data[:,0,:,:], x[0][0], self.stride)
-        f = self.compute_induced_filtration(x[0], hiddens, percentile=percentile)
+        f,nm = self.compute_induced_filtration(x[0], hiddens, percentile=percentile)
         m = dion.homology_persistence(f)
         dgms = dion.init_diagrams(m,f)
         subgraphs = {}
@@ -431,14 +419,15 @@ class AlexNet(nn.Module):
         muls = []
 
         for h in hiddens:
-            muls.append(torch.zeros(h.shape))
+            print('h shape', h.reshape((h.shape[0],-1)).shape)
+            muls.append(torch.zeros(h.reshape((h.shape[0],-1)).shape))
 
         fac = 1.0
-
+        print('m: ', m)
         for i,c in enumerate(m):
             if len(c) == 2:
                 if f[c[0].index][0] in subgraphs:
-                    subgraphs[f[c[0].index][0]].add_edge(f[c[0].index][0],f[c[1].index][0],weight=f[i].data)
+                    subgraphs[f[c[0].index][0]].add_edge(f[c[0].index][0],f[c[1].index][0], weight=f[i].data)
                 else:
                     eaten = False
                     for k, v in subgraphs.items():
@@ -465,13 +454,13 @@ class AlexNet(nn.Module):
         #         break
         # max_lifetime = max(lifetimes)
         # min_lifetime = min(lifetimes)
-        ids = self.layerwise_ids()
-        layer_types = self.layer_types
+        ids = dict((v,k) for k,v in nm.items())
 
         for e in subgraphs[k].edges(data=True):
-            for l in range(len(ids)-1):
-                if e[0] in ids[l] and e[1] in ids[l+1]:
-                    muls[l][e[1]-ids[l+1][0]] = fac
+            n1 = ids[e[0]]
+            n2 = ids[e[1]]
+            # allow the outcoming activation from that node at that channel (idx 1)
+            muls[n1[0]][n1[1]] = fac
 
         return muls
 
