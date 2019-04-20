@@ -219,7 +219,7 @@ def compute_induced_filtration_parallel(x, hiddens, params, percentile=0, stride
     m1, h0_births, h1_births_9 = linear_filtration_fast2(h1, p, l, 0, percentile=percentiles[l])
     enums += m1
 
-    max1 = np.maximum.reduce([h0_births, h1_births])
+    max1 = np.maximum.reduce([h0_births, h1_bireths])
     comp_percentile = percentiles[l-1] if percentiles[l-1] < percentiles[l] else percentiles[l]
     enums += [([spec_hash((l,0,i[0]))], max1[i]) for i in np.argwhere(max1 > comp_percentile)]
 
@@ -252,7 +252,7 @@ def compute_induced_filtration_parallel(x, hiddens, params, percentile=0, stride
 
 
 class AlexNet(nn.Module):
-    def __init__(self, num_classes=10):
+    def __init__(self, num_classes=1000):
         super(AlexNet, self).__init__()
 
         self.stride = 1
@@ -528,7 +528,7 @@ def main():
                         help='location to store trained model')
     parser.add_argument('-d', '--diagram-directory', type=str, required=False,
                         help='location to store homology info')
-    parser.add_argument('--batch-size', type=int, default=64, metavar='N',
+    parser.add_argument('--batch-size', type=int, default=20, metavar='N',
                         help='input batch size for training (default: 64)')
     parser.add_argument('--up-to', type=int, default=500, metavar='N',
                         help='How many testing exmaples for creating diagrams')
@@ -550,8 +550,8 @@ def main():
                         help='Whether to compute homology on dynamic graph after training')
     parser.add_argument('-ht', '--homology-train', action='store_true', default=False,
                         help='Whether to compute homology on static graph during training')
-    parser.add_argument('-da', '--dataset', type=str, required=True,
-                        help='which dataset to train on (cifar)')
+    parser.add_argument('-da', '--data', type=str, required=True,
+                        help='imagenet dataset directory')
     args = parser.parse_args()
     use_cuda = not args.no_cuda and torch.cuda.is_available()
 
@@ -561,21 +561,33 @@ def main():
 
     kwargs = {'num_workers': 1, 'pin_memory': True} if use_cuda else {}
 
-    transform = transforms.Compose(
-    [transforms.ToTensor(),
-     transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
+        # Data loading code
+    traindir = os.path.join(args.data, 'train')
+    valdir = os.path.join(args.data, 'val')
+    normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                     std=[0.229, 0.224, 0.225])
 
-    if args.dataset == 'cifar':
-        trainset = datasets.CIFAR10(root='../data/cifar', train=True,
-                                                download=True, transform=transform)
-        train_loader = torch.utils.data.DataLoader(trainset, batch_size=args.batch_size,
-                                                  shuffle=True, num_workers=2)
+    train_dataset = datasets.ImageFolder(
+        traindir,
+        transforms.Compose([
+            transforms.RandomResizedCrop(224),
+            transforms.ToTensor(),
+            normalize,
+    ]))
 
-        testset = datasets.CIFAR10(root='../data/cifar', train=False,
-                                               download=True, transform=transform)
-        test_loader = torch.utils.data.DataLoader(testset, batch_size=args.test_batch_size,
-                                                 shuffle=False, num_workers=2)
+    train_loader = torch.utils.data.DataLoader(
+                    train_dataset, batch_size=args.batch_size,
+                    shuffle=True,
+                    pin_memory=True)
 
+    val_loader = torch.utils.data.DataLoader(
+        datasets.ImageFolder(valdir, transforms.Compose([
+            transforms.Resize(256),
+            transforms.CenterCrop(224),
+            transforms.ToTensor(),
+            normalize,
+        ])),
+        batch_size=args.batch_size, shuffle=False, pin_memory=True)
 
     model = AlexNet().to(device)
     optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum)
@@ -595,7 +607,7 @@ def main():
         res_df = pd.DataFrame(res_df)
         res_df.to_pickle(df_loc)
 
-    save_path = os.path.join(args.model_directory, model.save_string(args.dataset))
+    save_path = os.path.join(args.model_directory, model.save_string('imagenet'))
     torch.save(model.state_dict(), save_path)
 
     if args.diagram_directory is not None and args.create_diagrams:

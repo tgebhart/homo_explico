@@ -19,7 +19,7 @@ def run():
                    ])), batch_size=1, shuffle=False)
 
     d, t = None, None
-    ioi = 1
+    ioi = 3
     iii = 0
     for data, target in test_loader:
         if iii == ioi:
@@ -29,7 +29,7 @@ def run():
         iii += 1
 
     dd = DeepDream(model, d)
-    dd.dream(percentile=90)
+    dd.dream('test_{}'.format(str(ioi)), percentile=94, lr=0.01, subgraph_indices=[1,2,3,4,5])
 
 
 if __name__ == "__main__":

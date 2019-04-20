@@ -159,7 +159,7 @@ def conv_filtration_fast(x, mat, id_start_1, id_start_2, percentile=None, h0_bir
 
 
 
-def conv_filtration_fast2(x, mat, layer, channel, percentile=0):
+def conv_filtration_fast2(x, mat, layer, channel, nlc, percentile=0):
 
     x = x.reshape(-1)
     x_diag = np.diag(x)
@@ -168,7 +168,7 @@ def conv_filtration_fast2(x, mat, layer, channel, percentile=0):
     h0_births = np.max(edges, axis=0)
     h1_births = np.max(edges, axis=1)
 
-    ret = [([spec_hash((layer, channel, j)), spec_hash((layer+1, channel, i))], edges[i,j].item()) for i,j in np.argwhere(edges > percentile)]
+    ret = [([spec_hash((layer, channel, j)), spec_hash((layer+1, i//nlc, i%nlc))], edges[i,j].item()) for i,j in np.argwhere(edges > percentile)]
 
     return ret, h0_births, h1_births
 
