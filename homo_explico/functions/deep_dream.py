@@ -41,18 +41,19 @@ class DeepDream():
         # Process image and return variable
         # self.processed_image = preprocess_image(self.created_image, True)
         total_rotation = 0
-        self.processed_image = Variable(self.created_image, requires_grad = True)
         # Define optimizer for the image
+        self.processed_image = Variable(self.created_image, requires_grad = True)
         # Earlier layers need higher learning rates to visualize whereas later layers need less
         optimizer = SGD([self.processed_image], lr=lr)
         output, hiddens = self.model(self.processed_image, hiddens=True)
         this_hiddens = [hiddens[i][0] for i in range(len(hiddens))]
         muls = self.model.compute_layer_mask(self.processed_image, this_hiddens, subgraph_indices=subgraph_indices, percentile=percentile)
-        # self.processed_image = torch.randn(self.created_image.shape)
-        for i in range(0, 3000+1):
+        self.created_image = x = torch.randn(self.created_image.shape)
+        self.processed_image = Variable(self.created_image, requires_grad = True)
+        for i in range(0, 3001):
             optimizer.zero_grad()
             # Assign create image to a variable to move forward in the model
-            x = self.processed_image
+
             output, hiddens = self.model(x, hiddens=True)
             this_hiddens = [hiddens[i][0] for i in range(len(hiddens))]
             # muls = model.compute_layer_mask(x, hiddens, thru=2, percentile=0)
@@ -64,20 +65,20 @@ class DeepDream():
                 # print(s[l].numpy())
             # Loss function is the mean of the output of the selected layer/filter
             # We try to minimize the mean of the output of that specific filter
-            loss = -torch.mean(s) + 0.001*(torch.sum(torch.abs(x[:, :, :, :-1] - x[:, :, :, 1:])) + torch.sum(torch.abs(x[:, :, :-1, :] - x[:, :, 1:, :])))
+            loss = -torch.mean(s) + 1e-3*(torch.sum(torch.abs(x[:, :, :, :-1] - x[:, :, :, 1:])) + torch.sum(torch.abs(x[:, :, :-1, :] - x[:, :, 1:, :]))) + torch.norm(x, p=float('inf'))
             print('Iteration:', str(i), 'Loss:', "{0:.2f}".format(loss.data.numpy()))
             # Backward
             loss.backward()
             # Update image
-            optimizer.step()
-            # Recreate image
-            # zoom = 1
-            # if np.random.random() < 0.05:
-            #     zoom = 1.1
-
             rotation = np.sign(np.random.random()-.5)*90
             total_rotation += rotation
-            self.created_image = ndimage.rotate(recreate_image(copy.copy(self.processed_image)), rotation, axes=(2,1), reshape=False)
+            sigma = 1e-3
+            self.created_image = ndimage.filters.gaussian_filter(ndimage.rotate(recreate_image(copy.copy(self.processed_image)), rotation, axes=(2,1), reshape=False), sigma)
+
+            optimizer.step()
+            # Recreate image
+
+            x = self.processed_image
 
             # self.created_image = ndimage.zoom(ndimage.rotate(recreate_image(copy.copy(self.processed_image)), np.sign(np.random.random()-.5)*90, axes=(2,1), reshape=False), [1,zoom,zoom])
             # transform = transforms.Compose([transforms.ToPILImage(mode='RGB'), transforms.RandomAffine(degrees=180, scale=(1,1)), transforms.ToTensor()])

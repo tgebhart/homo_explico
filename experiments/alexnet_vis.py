@@ -29,7 +29,7 @@ def run():
         iii += 1
 
     dd = DeepDream(model, d)
-    dd.dream('test_{}'.format(str(ioi)), percentile=94, lr=0.01, subgraph_indices=[1,2,3,4,5])
+    dd.dream('test_{}'.format(str(ioi)), percentile=94, lr=0.1, subgraph_indices=[0])
 
 
 if __name__ == "__main__":

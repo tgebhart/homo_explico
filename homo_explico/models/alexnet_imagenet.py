@@ -259,11 +259,11 @@ class AlexNet(nn.Module):
 
         self.c1 = nn.Conv2d(3, 64, kernel_size=11, stride=1, bias=False)
 
-        self.mp1 = nn.MaxPool2d(kernel_size=2, stride=1)
+        self.mp1 = nn.MaxPool2d(kernel_size=3, stride=2)
 
         self.c2 = nn.Conv2d(64, 192, kernel_size=5, bias=False)
 
-        self.mp2 = nn.MaxPool2d(kernel_size=2, stride=2)
+        self.mp2 = nn.MaxPool2d(kernel_size=3, stride=2)
 
         self.c3 = nn.Conv2d(192, 384, kernel_size=3, bias=False)
 
@@ -271,9 +271,9 @@ class AlexNet(nn.Module):
 
         self.c5 = nn.Conv2d(256, 256, kernel_size=3, bias=False)
 
-        self.mp3 = nn.MaxPool2d(kernel_size=2, stride=2)
+        self.mp3 = nn.MaxPool2d(kernel_size=3, stride=2)
 
-        self.l1 = nn.Linear(256, 4096, bias=False)
+        self.l1 = nn.Linear(256*441, 4096, bias=False)
 
         self.l2 = nn.Linear(4096, 4096, bias=False)
 
@@ -528,7 +528,7 @@ def main():
                         help='location to store trained model')
     parser.add_argument('-d', '--diagram-directory', type=str, required=False,
                         help='location to store homology info')
-    parser.add_argument('--batch-size', type=int, default=20, metavar='N',
+    parser.add_argument('--batch-size', type=int, default=1, metavar='N',
                         help='input batch size for training (default: 64)')
     parser.add_argument('--up-to', type=int, default=500, metavar='N',
                         help='How many testing exmaples for creating diagrams')
@@ -553,19 +553,22 @@ def main():
     parser.add_argument('-da', '--data', type=str, required=True,
                         help='imagenet dataset directory')
     args = parser.parse_args()
+
     use_cuda = not args.no_cuda and torch.cuda.is_available()
 
     torch.manual_seed(args.seed)
 
     device = torch.device("cuda" if use_cuda else "cpu")
 
-    kwargs = {'num_workers': 1, 'pin_memory': True} if use_cuda else {}
-
-        # Data loading code
+    # Data loading code
     traindir = os.path.join(args.data, 'train')
     valdir = os.path.join(args.data, 'val')
     normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                      std=[0.229, 0.224, 0.225])
+
+    model = torch.nn.DataParallel(AlexNet(), device_ids=range(torch.cuda.device_count()))
+    # model = .to(device)
+    optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum)
 
     train_dataset = datasets.ImageFolder(
         traindir,
@@ -578,7 +581,7 @@ def main():
     train_loader = torch.utils.data.DataLoader(
                     train_dataset, batch_size=args.batch_size,
                     shuffle=True,
-                    pin_memory=True)
+                    pin_memory=False)
 
     val_loader = torch.utils.data.DataLoader(
         datasets.ImageFolder(valdir, transforms.Compose([
@@ -587,18 +590,12 @@ def main():
             transforms.ToTensor(),
             normalize,
         ])),
-        batch_size=args.batch_size, shuffle=False, pin_memory=True)
-
-    model = AlexNet().to(device)
-    optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum)
+        batch_size=args.batch_size, shuffle=False, pin_memory=False)
 
     res_df = []
     for epoch in range(1, args.epochs + 1):
         train(args, model, device, train_loader, optimizer, epoch)
-        if args.homology_train:
-            res_df = test_homology(args,model,device,test_loader, epoch, res_df)
-        else:
-            test(args, model, device, test_loader)
+        test(args, model, device, test_loader)
 
     if args.homology_train and args.diagram_directory is not None:
         df_filename = model.save_string()
