@@ -489,18 +489,22 @@ class AlexNet(nn.Module):
 
 def train(args, model, device, train_loader, optimizer, epoch):
     model.train()
-    for batch_idx, (data, target) in enumerate(train_loader):
-        data, target = data.to(device), target.to(device)
-        optimizer.zero_grad()
-        output,_ = model(data, hiddens=False)
-        closs = nn.CrossEntropyLoss()
-        loss = closs(output, target)
-        loss.backward()
-        optimizer.step()
-        if batch_idx % args.log_interval == 0:
-            print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-                epoch, batch_idx * len(data), len(train_loader.dataset),
-                100. * batch_idx / len(train_loader), loss.item()))
+    with open('/home/schrater/gebhart/projects/homo_explico/experiments/alexnet_imagenet_train/log.txt', 'w') as f:
+        for batch_idx, (data, target) in enumerate(train_loader):
+            data, target = data.to(device), target.to(device)
+            optimizer.zero_grad()
+            output,_ = model(data, hiddens=False)
+            closs = nn.CrossEntropyLoss()
+            loss = closs(output, target)
+            loss.backward()
+            optimizer.step()
+            if batch_idx % args.log_interval == 0:
+                f.write('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}\n'.format(
+                        epoch, batch_idx * len(data), len(train_loader.dataset),
+                        100. * batch_idx / len(train_loader), loss.item()))
+                print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
+                    epoch, batch_idx * len(data), len(train_loader.dataset),
+                    100. * batch_idx / len(train_loader), loss.item()))
 
 def test(args, model, device, test_loader):
     model.eval()
@@ -528,13 +532,13 @@ def main():
                         help='location to store trained model')
     parser.add_argument('-d', '--diagram-directory', type=str, required=False,
                         help='location to store homology info')
-    parser.add_argument('--batch-size', type=int, default=1, metavar='N',
+    parser.add_argument('--batch-size', type=int, default=12, metavar='N',
                         help='input batch size for training (default: 64)')
     parser.add_argument('--up-to', type=int, default=500, metavar='N',
                         help='How many testing exmaples for creating diagrams')
-    parser.add_argument('--test-batch-size', type=int, default=64, metavar='N',
+    parser.add_argument('--test-batch-size', type=int, default=10, metavar='N',
                         help='input batch size for testing (default: 1000)')
-    parser.add_argument('--epochs', type=int, default=10, metavar='N',
+    parser.add_argument('--epochs', type=int, default=13, metavar='N',
                         help='number of epochs to train (default: 10)')
     parser.add_argument('--lr', type=float, default=0.01, metavar='LR',
                         help='learning rate (default: 0.01)')
@@ -561,13 +565,15 @@ def main():
     device = torch.device("cuda" if use_cuda else "cpu")
 
     # Data loading code
-    traindir = os.path.join(args.data, 'train')
-    valdir = os.path.join(args.data, 'val')
+    traindir = os.path.join(args.data, 'half_train')
+    valdir = os.path.join(args.data, 'half_val')
     normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                      std=[0.229, 0.224, 0.225])
 
     model = torch.nn.DataParallel(AlexNet(), device_ids=range(torch.cuda.device_count()))
+
     # model = .to(device)
+    model.cuda()
     optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum)
 
     train_dataset = datasets.ImageFolder(
@@ -581,7 +587,7 @@ def main():
     train_loader = torch.utils.data.DataLoader(
                     train_dataset, batch_size=args.batch_size,
                     shuffle=True,
-                    pin_memory=False)
+                    pin_memory=True)
 
     val_loader = torch.utils.data.DataLoader(
         datasets.ImageFolder(valdir, transforms.Compose([
@@ -590,12 +596,12 @@ def main():
             transforms.ToTensor(),
             normalize,
         ])),
-        batch_size=args.batch_size, shuffle=False, pin_memory=False)
+        batch_size=args.batch_size, shuffle=False, pin_memory=True)
 
     res_df = []
     for epoch in range(1, args.epochs + 1):
         train(args, model, device, train_loader, optimizer, epoch)
-        test(args, model, device, test_loader)
+    test(args, model, device, val_loader)
 
     if args.homology_train and args.diagram_directory is not None:
         df_filename = model.save_string()
@@ -604,8 +610,8 @@ def main():
         res_df = pd.DataFrame(res_df)
         res_df.to_pickle(df_loc)
 
-    save_path = os.path.join(args.model_directory, model.save_string('imagenet'))
-    torch.save(model.state_dict(), save_path)
+    save_path = os.path.join(args.model_directory, 'alexnet_imagenet')
+    torch.save(model.module.state_dict(), save_path)
 
     if args.diagram_directory is not None and args.create_diagrams:
         create_diagrams(args, model)
