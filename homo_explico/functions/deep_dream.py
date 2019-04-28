@@ -37,19 +37,24 @@ class DeepDream():
         # Hook the selected layer
         self.model[self.selected_layer].register_forward_hook(hook_function)
 
-    def dream(self, folder_name, subgraph_indices=[0], percentile=0, lr=0.01):
+    def dream(self, save_path, subgraph_indices=[0], percentile=0, lr=0.01):
         # Process image and return variable
         # self.processed_image = preprocess_image(self.created_image, True)
         total_rotation = 0
         # Define optimizer for the image
         self.processed_image = Variable(self.created_image, requires_grad = True)
+        pixels = self.created_image.numpy().reshape(3,224,224).transpose([1, 2, 0])
+        plt.title('Original')
+        plt.imshow(pixels, interpolation='bilinear')
+        plt.savefig(os.path.join(save_path, 'original.png'), format='png')
+        plt.close()
         # Earlier layers need higher learning rates to visualize whereas later layers need less
-        optimizer = SGD([self.processed_image], lr=lr)
         output, hiddens = self.model(self.processed_image, hiddens=True)
         this_hiddens = [hiddens[i][0] for i in range(len(hiddens))]
         muls = self.model.compute_layer_mask(self.processed_image, this_hiddens, subgraph_indices=subgraph_indices, percentile=percentile)
         self.created_image = x = torch.randn(self.created_image.shape)
         self.processed_image = Variable(self.created_image, requires_grad = True)
+        optimizer = Adam([self.processed_image], lr=lr)
         for i in range(0, 3001):
             optimizer.zero_grad()
             # Assign create image to a variable to move forward in the model
@@ -65,7 +70,7 @@ class DeepDream():
                 # print(s[l].numpy())
             # Loss function is the mean of the output of the selected layer/filter
             # We try to minimize the mean of the output of that specific filter
-            loss = -torch.mean(s) + 1e-3*(torch.sum(torch.abs(x[:, :, :, :-1] - x[:, :, :, 1:])) + torch.sum(torch.abs(x[:, :, :-1, :] - x[:, :, 1:, :]))) + torch.norm(x, p=float('inf'))
+            loss = -torch.mean(s) + 1e-2*(torch.sum(torch.abs(x[:, :, :, :-1] - x[:, :, :, 1:])) + torch.sum(torch.abs(x[:, :, :-1, :] - x[:, :, 1:, :]))) + 1e-4*torch.norm(x, p=float('inf'))
             print('Iteration:', str(i), 'Loss:', "{0:.2f}".format(loss.data.numpy()))
             # Backward
             loss.backward()
@@ -87,12 +92,12 @@ class DeepDream():
 
             if i % 100 == 0:
                 print(self.created_image.shape)
-                pixels = ndimage.rotate(self.created_image, -total_rotation, axes=(2,1), reshape=False).reshape(3,32,32).transpose([1, 2, 0])
+                pixels = ndimage.rotate(self.created_image, -total_rotation, axes=(2,1), reshape=False).reshape(3,224,224).transpose([1, 2, 0])
 
                 # Plot
                 plt.title('Iteration {}'.format(i))
                 plt.imshow(pixels, interpolation='bilinear')
-                plt.savefig('/home/tgebhart/projects/homo_explico/logdir/experiments/alexnet_vis/{}/iteration_{}.png'.format(folder_name, i), format='png')
+                plt.savefig(os.path.join(save_path, 'iteration_{}.png'.format(i)), format='png')
                 # plt.show()
                 plt.close()
                 # im_path = '../generated/ddream_l' + str(self.selected_layer) + \
